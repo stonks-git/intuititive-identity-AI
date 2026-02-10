@@ -60,7 +60,7 @@ Based on a review of 100+ papers and systems from 2024-2026, several elements of
 
 The combination of these elements with established techniques (ACT-R memory gating, dual-process reasoning, hybrid retrieval, consolidation cycles) is, to our knowledge, unique. The field is converging fast — similar ideas are approaching from different angles in the January-February 2026 literature — and this assessment may date quickly.
 
-For full research backing: see [RESEARCH_REPORT.md](RESEARCH_REPORT.md) (80+ sources).
+For full research backing: see [design/02-research-report.md](design/02-research-report.md) (80+ sources).
 
 ## Status
 
@@ -77,9 +77,9 @@ For full research backing: see [RESEARCH_REPORT.md](RESEARCH_REPORT.md) (80+ sou
 
 | Document | What it covers |
 |----------|---------------|
-| [TECHNICAL_DESCRIPTION.md](TECHNICAL_DESCRIPTION.md) | Full technical + philosophical overview (start here for depth) |
-| [DOCUMENTATION.md](DOCUMENTATION.md) | Detailed internal documentation — architecture decisions, design rationale, edge cases |
-| [RESEARCH_REPORT.md](RESEARCH_REPORT.md) | Literature review: 80+ papers, validation of design, identification of novel elements |
+| [design/09-technical-description.md](design/09-technical-description.md) | Full technical + philosophical overview (start here for depth) |
+| [design/08-documentation.md](design/08-documentation.md) | Detailed internal documentation — architecture decisions, design rationale, edge cases |
+| [design/02-research-report.md](design/02-research-report.md) | Literature review: 80+ papers, validation of design, identification of novel elements |
 | [new_plan_v4.md](new_plan_v4.md) | Current implementation plan — 35 tasks with dependencies, code snippets, test criteria |
 
 ## The Philosophy
