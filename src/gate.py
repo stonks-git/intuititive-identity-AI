@@ -1,7 +1,7 @@
 """Memory Gate — Entry and Exit gates for the cognitive loop.
 
 Entry gate: Stochastic filter on every message, buffers to scratch.
-Exit gate: ACT-R adapted scoring on FIFO pruning / periodic flush.
+Exit gate: ACT-R activation → 3x3 decision matrix → action.
 
 All skip/persist probabilities are stochastic and evolvable by consolidation.
 ACT-R equation structure is kept; parameters are human-calibrated starting
@@ -12,7 +12,12 @@ import logging
 import math
 import random
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
+
+import numpy as np
+
+from .activation import compute_activation, spreading_activation, cosine_similarity
 
 logger = logging.getLogger("agent.gate")
 
@@ -44,7 +49,9 @@ class EntryGate:
         self.config = config or EntryGateConfig()
         self._stats = {"evaluated": 0, "buffered": 0, "skipped": 0}
 
-    def evaluate(self, content: str, source: str = "unknown") -> tuple[bool, dict]:
+    def evaluate(
+        self, content: str, source: str = "unknown", source_tag: str = "external_user",
+    ) -> tuple[bool, dict]:
         """Evaluate content for scratch buffering.
 
         Returns (should_buffer, metadata).
@@ -55,6 +62,7 @@ class EntryGate:
 
         metadata = {
             "source": source,
+            "source_tag": source_tag,
             "content_length": len(content_stripped),
             "gate_decision": None,
             "gate_reason": None,
@@ -118,279 +126,228 @@ class EntryGate:
 
 # ── EXIT GATE ───────────────────────────────────────────────────────────────
 
+# 3x3 decision matrix cell names
+PERSIST_HIGH = "persist_high"        # Core + Contradicting / Core + Novel
+PERSIST_FLAG = "persist_flag"        # Core + Contradicting (max priority)
+PERSIST = "persist"                  # Peripheral + Contradicting
+REINFORCE = "reinforce"              # Core + Confirming
+BUFFER = "buffer"                    # Peripheral + Novel
+SKIP = "skip"                        # Peripheral + Confirming
+DROP = "drop"                        # Irrelevant row
+
 
 @dataclass
 class ExitGateConfig:
-    """ACT-R adapted exit gate parameters.
+    """ACT-R exit gate with 3x3 decision matrix.
 
-    Equation structure from ACT-R (decades validated).
-    Parameter VALUES are human-calibrated starting points — evolved by
-    consolidation based on outcomes.
+    Relevance axis from spreading activation S_i.
+    Novelty axis from check_novelty().
     """
-    persist_threshold: float = 0.3
-    # ACT-R parameters
-    decay_d: float = 0.5               # base-level decay rate
-    noise_s: float = 0.25              # logistic noise spread
-    # Component weights
-    spreading_weight: float = 0.4       # relevance component
-    novelty_weight: float = 0.3         # novelty component
-    contradiction_bonus: float = 0.4    # bonus for contradicting beliefs
-    # Spreading activation sub-weights
-    goal_relevance_weight: float = 0.5
-    identity_relevance_weight: float = 0.3
-    context_relevance_weight: float = 0.2
+    # Relevance thresholds (from S_i)
+    core_threshold: float = 0.6
+    peripheral_threshold: float = 0.3
+    # Novelty thresholds
+    confirming_sim: float = 0.85
+    novel_sim: float = 0.6
+    contradiction_sim: float = 0.7
+    # Stochastic noise floor for "drop" cells
+    drop_noise_floor: float = 0.02
+    # v0.1 emotional charge: centroid distance placeholder
+    emotional_charge_bonus: float = 0.15
+    emotional_charge_threshold: float = 0.3
 
 
 class ExitGate:
-    """ACT-R adapted exit gate — scores content for permanent persistence.
+    """ACT-R → 3x3 decision matrix exit gate.
 
-    gate_score = relevance(S_i) * novelty(1 - redundancy)
-                 + contradiction_bonus + noise(epsilon)
+    Pipeline: content → ACT-R activation → classify into 3x3 matrix → action.
 
-    Fires on: FIFO pruning, periodic scratch flush.
-    Does NOT fire on every message (that is the entry gate is job).
+    3x3 Matrix (Relevance × Novelty):
+                     Confirming          Novel              Contradicting
+    Core           | Reinforce(mod)    | PERSIST(high)    | PERSIST+FLAG(max)
+    Peripheral     | Skip(low)         | Buffer(mod)      | Persist(high)
+    Irrelevant     | Drop              | Drop(noise)      | Drop(noise)
+
+    Gate starts PERMISSIVE — over-persisting is recoverable, dropping is permanent.
     """
 
     def __init__(self, config: ExitGateConfig | None = None):
         self.config = config or ExitGateConfig()
-        self._stats = {"evaluated": 0, "persisted": 0, "dropped": 0}
+        self._stats = {
+            "evaluated": 0, "persisted": 0, "dropped": 0,
+            "buffered": 0, "reinforced": 0, "flagged": 0,
+        }
 
     async def evaluate(
         self,
         content: str,
-        memory_store,       # MemoryStore instance
-        layers,             # LayerStore instance
+        memory_store,
+        layers,
+        attention_embedding: np.ndarray | None = None,
         conversation_context: list[dict] | None = None,
     ) -> tuple[bool, float, dict]:
-        """Score content for persistence using ACT-R adapted math.
-
-        Returns (should_persist, score, metadata).
-        Metadata logged for consolidation to learn from.
-        """
+        """Score content through 3x3 matrix. Returns (should_persist, score, metadata)."""
         self._stats["evaluated"] += 1
 
+        # 1. Embed content for similarity computations
+        content_embedding = np.array(
+            await memory_store.embed(content, task_type="SEMANTIC_SIMILARITY"),
+            dtype=np.float32,
+        )
+
+        # 2. RELEVANCE AXIS — spreading activation
+        layer_embeddings = layers.get_all_layer_embeddings()
+        s_i = spreading_activation(
+            content_embedding, attention_embedding, layer_embeddings,
+        )
+
+        # 3. NOVELTY AXIS — check against existing memories
+        is_novel, max_sim = await memory_store.check_novelty(content)
+        contradiction = self._detect_contradiction_heuristic(
+            content, memory_store, max_sim
+        )
+
+        # 4. v0.1 EMOTIONAL CHARGE placeholder (centroid distance)
+        # Will be replaced by gut.py (§5.1)
+        emotional_charge = 0.0  # neutral until gut feeling implemented
+
+        # 5. CLASSIFY into 3x3 matrix
+        relevance_class = self._classify_relevance(s_i)
+        novelty_class = self._classify_novelty(max_sim, contradiction)
+        cell = self._matrix_decision(relevance_class, novelty_class)
+
+        # 6. Compute gate score
+        score = self._cell_score(cell, s_i, max_sim, contradiction, emotional_charge)
+
+        # 7. Apply stochastic noise floor (even "drop" cells can surprise)
+        if cell == DROP and random.random() < self.config.drop_noise_floor:
+            cell = BUFFER
+            score = max(score, 0.1)
+
+        should_persist = cell in (PERSIST_HIGH, PERSIST_FLAG, PERSIST, REINFORCE)
+        should_buffer = cell == BUFFER
+
+        # Stats
+        if cell == PERSIST_FLAG:
+            self._stats["flagged"] += 1
+            self._stats["persisted"] += 1
+        elif should_persist:
+            self._stats["persisted"] += 1
+        elif should_buffer:
+            self._stats["buffered"] += 1
+        else:
+            if cell == REINFORCE:
+                self._stats["reinforced"] += 1
+            else:
+                self._stats["dropped"] += 1
+
         metadata = {
-            "spreading_activation": 0.0,
-            "novelty": 0.0,
-            "redundancy": 0.0,
-            "contradiction": 0.0,
-            "noise": 0.0,
-            "raw_score": 0.0,
-            "final_score": 0.0,
-            "decision": None,
+            "spreading_activation": s_i,
+            "max_similarity": max_sim,
+            "contradiction": contradiction,
+            "emotional_charge": emotional_charge,
+            "relevance_class": relevance_class,
+            "novelty_class": novelty_class,
+            "matrix_cell": cell,
+            "final_score": score,
+            "decision": cell,
         }
 
-        # 1. SPREADING ACTIVATION — relevance to goals/values/context
-        spreading = self._compute_spreading_activation(
-            content, layers, conversation_context
-        )
-        metadata["spreading_activation"] = spreading
-
-        # 2. NOVELTY — inverse of redundancy with existing memories
-        redundancy, contradiction = await self._compute_novelty(
-            content, memory_store
-        )
-        metadata["redundancy"] = redundancy
-        metadata["contradiction"] = contradiction
-        novelty = 1.0 - redundancy
-        metadata["novelty"] = novelty
-
-        # 3. STOCHASTIC NOISE — logistic distribution (ACT-R standard)
-        noise = self._logistic_noise()
-        metadata["noise"] = noise
-
-        # 4. GATE SCORE = relevance * novelty + contradiction + noise
-        c = self.config
-        raw_score = (
-            (c.spreading_weight * spreading) * (c.novelty_weight + novelty)
-            + (c.contradiction_bonus * contradiction)
-            + noise
-        )
-        metadata["raw_score"] = raw_score
-
-        # Sigmoid normalization to 0-1
-        score = 1.0 / (1.0 + math.exp(-raw_score * 3.0))
-        metadata["final_score"] = score
-
-        # 5. PERSIST DECISION
-        should_persist = score >= self.config.persist_threshold
-        metadata["decision"] = "persist" if should_persist else "drop"
-
-        if should_persist:
-            self._stats["persisted"] += 1
-        else:
-            self._stats["dropped"] += 1
-
         logger.info(
-            f"Exit gate: {metadata[chr(100)+ecision]} "
-            f"(score={score:.3f}, relevance={spreading:.3f}, "
-            f"novelty={novelty:.3f}, contradiction={contradiction:.3f})"
+            f"Exit gate: {cell} "
+            f"(score={score:.3f}, S_i={s_i:.3f}, sim={max_sim:.3f}, "
+            f"rel={relevance_class}, nov={novelty_class})"
         )
-        return should_persist, score, metadata
+        return should_persist or should_buffer, score, metadata
 
-    # ── Spreading activation (relevance) ─────────────────────────────────
+    def _classify_relevance(self, s_i: float) -> str:
+        if s_i > self.config.core_threshold:
+            return "core"
+        elif s_i > self.config.peripheral_threshold:
+            return "peripheral"
+        return "irrelevant"
 
-    def _compute_spreading_activation(
-        self,
-        content: str,
-        layers,
-        conversation_context: list[dict] | None,
+    def _classify_novelty(self, max_sim: float, contradiction: float) -> str:
+        if contradiction > 0.3:
+            return "contradicting"
+        if max_sim > self.config.confirming_sim:
+            return "confirming"
+        if max_sim < self.config.novel_sim:
+            return "novel"
+        return "novel"  # default to novel (permissive gate)
+
+    def _matrix_decision(self, relevance: str, novelty: str) -> str:
+        """3x3 matrix lookup."""
+        matrix = {
+            ("core", "confirming"):     REINFORCE,
+            ("core", "novel"):          PERSIST_HIGH,
+            ("core", "contradicting"):  PERSIST_FLAG,
+            ("peripheral", "confirming"): SKIP,
+            ("peripheral", "novel"):    BUFFER,
+            ("peripheral", "contradicting"): PERSIST,
+            ("irrelevant", "confirming"): DROP,
+            ("irrelevant", "novel"):    DROP,
+            ("irrelevant", "contradicting"): DROP,
+        }
+        return matrix.get((relevance, novelty), DROP)
+
+    def _cell_score(
+        self, cell: str, s_i: float, max_sim: float,
+        contradiction: float, emotional_charge: float,
     ) -> float:
-        """S_i = sum(W_k * association(content, source_k))
+        """Compute a score for the cell decision (used for downstream ranking)."""
+        base_scores = {
+            PERSIST_FLAG: 0.95,
+            PERSIST_HIGH: 0.85,
+            PERSIST: 0.70,
+            REINFORCE: 0.50,
+            BUFFER: 0.40,
+            SKIP: 0.15,
+            DROP: 0.05,
+        }
+        score = base_scores.get(cell, 0.05)
 
-        Sources: Layer 0 values, Layer 1 goals, recent conversation.
-        Uses keyword overlap for v1 (embedding-based upgrade in v2).
-        """
-        c = self.config
-        activation = 0.0
+        # Emotional charge bonus
+        if emotional_charge > self.config.emotional_charge_threshold:
+            score += self.config.emotional_charge_bonus
 
-        # Goal relevance
-        goals = layers.layer1.get("active_goals", [])
-        if goals:
-            goal_texts = [g.get("goal", "") for g in goals]
-            goal_weights = [g.get("weight", 0.5) for g in goals]
-            activation += c.goal_relevance_weight * self._keyword_relevance(
-                content, goal_texts, goal_weights
-            )
+        # Modulate by actual spreading activation strength
+        score = score * (0.5 + 0.5 * s_i)
 
-        # Identity relevance (values + beliefs)
-        values = layers.layer0.get("values", [])
-        beliefs = layers.layer0.get("beliefs", [])
-        if values or beliefs:
-            id_texts = (
-                [v.get("value", "") for v in values]
-                + [b.get("belief", "") for b in beliefs]
-            )
-            id_weights = (
-                [v.get("weight", 0.5) for v in values]
-                + [b.get("confidence", 0.5) for b in beliefs]
-            )
-            activation += c.identity_relevance_weight * self._keyword_relevance(
-                content, id_texts, id_weights
-            )
+        return min(1.0, max(0.0, score))
 
-        # Context relevance (last 5 messages)
-        if conversation_context:
-            recent = conversation_context[-5:]
-            ctx_texts = [m.get("content", "") for m in recent]
-            activation += c.context_relevance_weight * self._keyword_relevance(
-                content, ctx_texts, [1.0] * len(ctx_texts)
-            )
-
-        return min(activation, 1.0)
-
-    # ── Novelty + contradiction ──────────────────────────────────────────
-
-    async def _compute_novelty(
-        self,
-        content: str,
-        memory_store,
-    ) -> tuple[float, float]:
-        """Compute redundancy and contradiction vs existing memories.
-
-        Returns (redundancy 0-1, contradiction 0-1).
-
-        Redundancy: similarity * base_level_activation of nearest neighbor.
-        Contradiction: high similarity + opposing conclusion.
-        """
-        count = await memory_store.memory_count()
-        if count == 0:
-            return 0.0, 0.0   # nothing to be redundant with
-
-        similar = await memory_store.search_similar(
-            content, top_k=3, min_similarity=0.2
-        )
-        if not similar:
-            return 0.0, 0.0
-
-        top = similar[0]
-        similarity = top.get("similarity", 0.0)
-        access_count = top.get("access_count", 0)
-
-        # Base-level activation: B_i = ln(1 + n) where n = access count
-        # Simplified from full ACT-R sum-of-recencies
-        base_level = math.log(1 + access_count)
-
-        # Redundancy: high similarity AND high base-level = well-trodden ground
-        redundancy = similarity * min(1.0, 0.3 + 0.15 * base_level)
-
-        # Contradiction: high similarity but opposing content
-        contradiction = 0.0
-        if similarity > 0.6:
-            contradiction = self._detect_contradiction(
-                content, top.get("content", "")
-            )
-
-        return redundancy, contradiction
-
-    def _detect_contradiction(
-        self, new_content: str, existing_content: str
+    def _detect_contradiction_heuristic(
+        self, content: str, memory_store, max_sim: float,
     ) -> float:
-        """Detect if new content contradicts existing content.
+        """Layer 1 contradiction detection: negation marker asymmetry.
 
-        v1: Keyword heuristic (negation marker asymmetry).
-        v2: Embedding-based semantic opposition (TODO).
+        Cheap heuristic (~0ms). Layers 2-3 (embedding opposition, LLM micro-call)
+        added in later tasks.
         """
+        if max_sim < self.config.contradiction_sim:
+            return 0.0
+        # We don't have the existing content here yet — return 0 for now.
+        # Full contradiction detection will use the retrieved memory content
+        # from check_novelty when that method is enhanced to return content.
+        return 0.0
+
+    @staticmethod
+    def detect_contradiction_negation(new_content: str, existing_content: str) -> float:
+        """Negation marker asymmetry heuristic (~0ms)."""
         negation_markers = [
-            "not", "dont, doesnt", "isnt, wasnt", "wont,
-            cant", "never", "no longer", "stopped", "changed",
+            "not", "dont", "doesnt", "isnt", "wasnt", "wont",
+            "cant", "never", "no longer", "stopped", "changed",
             "actually", "instead", "wrong", "incorrect", "mistaken",
             "however", "but actually", "on the contrary", "opposite",
             "disagree", "unlike", "different from",
         ]
-
         new_lower = new_content.lower()
         existing_lower = existing_content.lower()
-
-        asymmetry = 0
-        for marker in negation_markers:
-            in_new = marker in new_lower
-            in_old = marker in existing_lower
-            if in_new != in_old:
-                asymmetry += 1
-
+        asymmetry = sum(
+            1 for m in negation_markers
+            if (m in new_lower) != (m in existing_lower)
+        )
         return min(1.0, asymmetry * 0.15)
-
-    # ── Utility functions ────────────────────────────────────────────────
-
-    def _keyword_relevance(
-        self,
-        content: str,
-        references: list[str],
-        weights: list[float],
-    ) -> float:
-        """Weighted keyword overlap — cheap v1 relevance proxy.
-
-        Returns score 0-1.
-        Will be replaced by embedding similarity in v2.
-        """
-        content_words = set(content.lower().split())
-        if not content_words:
-            return 0.0
-
-        total_weight = sum(weights) or 1.0
-        score = 0.0
-
-        for text, weight in zip(references, weights):
-            ref_words = set(text.lower().split())
-            if not ref_words:
-                continue
-            overlap = len(content_words & ref_words) / max(
-                len(content_words), len(ref_words)
-            )
-            score += weight * overlap
-
-        return min(1.0, score / total_weight)
-
-    def _logistic_noise(self) -> float:
-        """ACT-R standard noise — logistic(0, s) distribution.
-
-        Provides stochastic floor so the gate can surprise itself.
-        """
-        s = self.config.noise_s
-        p = random.random()
-        p = max(0.001, min(0.999, p))  # avoid infinity
-        return s * math.log(p / (1.0 - p))
 
     @property
     def stats(self) -> dict:

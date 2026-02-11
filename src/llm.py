@@ -19,11 +19,113 @@ import asyncio
 import logging
 import random
 import time
+from collections import defaultdict
+from dataclasses import dataclass, field
 from typing import Any
 
 from .config import RetryConfig
 
 logger = logging.getLogger("agent.llm")
+
+
+# ── ENERGY COST TRACKING (§4.8) ────────────────────────────────────────────
+
+# Approximate costs per 1M tokens (USD)
+MODEL_COSTS = {
+    # Google Gemini
+    "gemini-2.5-flash-lite": {"input": 0.075, "output": 0.30},
+    "gemini-embedding-001": {"input": 0.015, "output": 0.0},
+    # Anthropic Claude
+    "claude-sonnet-4-5-20250929": {"input": 3.00, "output": 15.00},
+}
+
+
+@dataclass
+class CostEntry:
+    model: str
+    tokens_in: int
+    tokens_out: int
+    cost_usd: float
+    timestamp: float
+    label: str
+
+
+class EnergyTracker:
+    """Track API costs as an internal cognitive signal.
+
+    Phase 1: Passive — log everything, expose via /cost, inject into prompt.
+    No budget enforcement yet.
+    """
+
+    def __init__(self):
+        self.entries: list[CostEntry] = []
+        self.session_start = time.time()
+
+    def record(
+        self,
+        model: str,
+        tokens_in: int = 0,
+        tokens_out: int = 0,
+        label: str = "",
+    ) -> float:
+        """Record an API call and return its cost."""
+        rates = MODEL_COSTS.get(model, {"input": 0.0, "output": 0.0})
+        cost = (tokens_in * rates["input"] + tokens_out * rates["output"]) / 1_000_000
+
+        entry = CostEntry(
+            model=model,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            cost_usd=cost,
+            timestamp=time.time(),
+            label=label,
+        )
+        self.entries.append(entry)
+        return cost
+
+    @property
+    def session_cost(self) -> float:
+        return sum(e.cost_usd for e in self.entries)
+
+    @property
+    def cost_24h(self) -> float:
+        cutoff = time.time() - 86400
+        return sum(e.cost_usd for e in self.entries if e.timestamp > cutoff)
+
+    def breakdown(self) -> dict[str, dict]:
+        """Cost breakdown by model."""
+        by_model: dict[str, dict] = defaultdict(
+            lambda: {"calls": 0, "tokens_in": 0, "tokens_out": 0, "cost": 0.0}
+        )
+        for e in self.entries:
+            m = by_model[e.model]
+            m["calls"] += 1
+            m["tokens_in"] += e.tokens_in
+            m["tokens_out"] += e.tokens_out
+            m["cost"] += e.cost_usd
+        return dict(by_model)
+
+    def cost_summary(self) -> str:
+        """One-line summary for system prompt injection."""
+        return f"Session cost: ${self.session_cost:.4f} | 24h: ${self.cost_24h:.4f}"
+
+    def detailed_report(self) -> str:
+        """Multi-line report for /cost command."""
+        lines = [f"Session cost: ${self.session_cost:.4f}"]
+        lines.append(f"24h cost: ${self.cost_24h:.4f}")
+        lines.append(f"Total API calls: {len(self.entries)}")
+        lines.append("")
+        for model, stats in self.breakdown().items():
+            lines.append(
+                f"  {model}: {stats['calls']} calls, "
+                f"{stats['tokens_in']}+{stats['tokens_out']} tokens, "
+                f"${stats['cost']:.4f}"
+            )
+        return "\n".join(lines)
+
+
+# Global tracker (set by cognitive loop at startup)
+energy_tracker = EnergyTracker()
 
 
 def _is_transient(exc: Exception) -> bool:

@@ -35,7 +35,7 @@ storage:
   backend: "postgres"
   postgres:
     host: "localhost"
-    port: 5432
+    port: 5433
     database: "agent_memory"
     user: "agent"
     # password from AGENT_DB_PASSWORD env var

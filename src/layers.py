@@ -1,29 +1,41 @@
-"""Layer Store — manages Layer 0 (identity), Layer 1 (goals), Layer 2 (memory)."""
+"""Layer Store — manages Layer 0 (identity), Layer 1 (goals), Layer 2 (memory).
 
+Also provides embedding cache for L0/L1 items, used by:
+  - Subconscious centroid (5.1)
+  - ACT-R spreading activation (2.7)
+  - Hybrid relevance semantic component (3.1)
+"""
+
+import hashlib
 import json
 import logging
 import shutil
 from pathlib import Path
 from datetime import datetime
 
+import numpy as np
+
 logger = logging.getLogger("agent.layers")
 
 
 class LayerStore:
-    """Manages the three memory layers on disk."""
+    """Manages the three memory layers on disk, with embedding cache."""
 
     def __init__(self, agent_home: Path):
         self.agent_home = agent_home
         self.layer0_path = agent_home / "identity" / "layer0.json"
         self.layer1_path = agent_home / "goals" / "layer1.json"
         self.manifest_path = agent_home / "manifest.json"
+        self._embed_cache_path = agent_home / "cache" / "layer_embeddings.json"
 
         self.layer0: dict = {}
         self.layer1: dict = {}
         self.manifest: dict = {}
+        # Cache: {text_hash: list[float]}
+        self._embed_cache: dict[str, list[float]] = {}
 
     def load(self):
-        """Load all layers from disk."""
+        """Load all layers and embedding cache from disk."""
         if self.layer0_path.exists():
             with open(self.layer0_path) as f:
                 self.layer0 = json.load(f)
@@ -38,6 +50,11 @@ class LayerStore:
             with open(self.manifest_path) as f:
                 self.manifest = json.load(f)
             logger.info(f"Manifest loaded: {self.manifest.get('agent_id')}")
+
+        if self._embed_cache_path.exists():
+            with open(self._embed_cache_path) as f:
+                self._embed_cache = json.load(f)
+            logger.info(f"Layer embedding cache loaded: {len(self._embed_cache)} entries")
 
     def save(self):
         """Persist all layers to disk."""
@@ -66,6 +83,83 @@ class LayerStore:
             ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
             history_path = history_dir / f"v{version}_{ts}.json"
             shutil.copy2(path, history_path)
+
+    # --- EMBEDDING CACHE ---
+
+    @staticmethod
+    def _text_hash(text: str) -> str:
+        return hashlib.sha256(text.encode()).hexdigest()[:16]
+
+    def _save_embed_cache(self):
+        self._embed_cache_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self._embed_cache_path, "w") as f:
+            json.dump(self._embed_cache, f)
+
+    async def ensure_embeddings(self, memory_store) -> int:
+        """Embed any L0/L1 items not yet in cache. Returns count of new embeddings."""
+        texts_to_embed = []
+        hashes = []
+
+        for item in self._iter_layer_items():
+            h = self._text_hash(item["text"])
+            if h not in self._embed_cache:
+                texts_to_embed.append(item["text"])
+                hashes.append(h)
+
+        if not texts_to_embed:
+            return 0
+
+        embeddings = await memory_store.embed_batch(
+            texts_to_embed, task_type="RETRIEVAL_DOCUMENT", title="identity_goal",
+        )
+        for h, emb in zip(hashes, embeddings):
+            self._embed_cache[h] = emb
+
+        self._save_embed_cache()
+        logger.info(f"Embedded {len(texts_to_embed)} new L0/L1 items")
+        return len(texts_to_embed)
+
+    def get_layer_embeddings(self, layer: int) -> list[tuple[str, float, np.ndarray]]:
+        """Get (text, weight, embedding_vector) for items in a layer.
+
+        Returns empty list at bootstrap (blank L0/L1).
+        """
+        results = []
+        for item in self._iter_layer_items():
+            if item["layer"] != layer:
+                continue
+            h = self._text_hash(item["text"])
+            if h in self._embed_cache:
+                vec = np.array(self._embed_cache[h], dtype=np.float32)
+                results.append((item["text"], item["weight"], vec))
+        return results
+
+    def get_all_layer_embeddings(self) -> list[tuple[str, float, np.ndarray]]:
+        """Get embeddings for all L0 + L1 items."""
+        return self.get_layer_embeddings(0) + self.get_layer_embeddings(1)
+
+    def _iter_layer_items(self):
+        """Yield dicts with text, weight, layer for all L0/L1 items."""
+        # L0 values
+        for v in self.layer0.get("values", []):
+            text = v.get("value", "")
+            if text:
+                yield {"text": text, "weight": v.get("weight", 0.5), "layer": 0}
+        # L0 beliefs
+        for b in self.layer0.get("beliefs", []):
+            text = b.get("belief", "")
+            if text:
+                yield {"text": text, "weight": b.get("confidence", 0.5), "layer": 0}
+        # L0 boundaries
+        for b in self.layer0.get("boundaries", []):
+            text = b.get("description", "")
+            if text:
+                yield {"text": text, "weight": 1.0, "layer": 0}
+        # L1 goals
+        for g in self.layer1.get("active_goals", []):
+            text = g.get("description", "") or g.get("goal", "")
+            if text:
+                yield {"text": text, "weight": g.get("weight", 0.5), "layer": 1}
 
     def render_identity_hash(self) -> str:
         """Tier 1: compressed identity for every prompt (~100-200 tokens)."""

@@ -26,7 +26,7 @@ from .config import load_config
 from .layers import LayerStore
 from .memory import MemoryStore
 from .loop import cognitive_loop
-from .consolidation import ConsolidationWorker
+from .consolidation import ConsolidationEngine
 from .idle import IdleLoop
 
 # Load .env before anything that needs API keys
@@ -49,6 +49,7 @@ logger = logging.getLogger("agent")
 async def main():
     logger.info("Agent starting up...")
     logger.info(f"Agent home: {AGENT_HOME}")
+    startup_time = datetime.utcnow()
 
     # Load configuration
     config = load_config(AGENT_HOME / "config")
@@ -58,13 +59,30 @@ async def main():
     layers = LayerStore(AGENT_HOME)
     layers.load()
     logger.info(
-        f"Layer 0: v{layers.layer0[version]}, "
-        f"{len(layers.layer0.get(values, []))} values, "
-        f"{len(layers.layer0.get(boundaries, []))} boundaries"
+        f"Layer 0: v{layers.layer0['version']}, "
+        f"{len(layers.layer0.get('values', []))} values, "
+        f"{len(layers.layer0.get('boundaries', []))} boundaries"
     )
     logger.info(
-        f"Layer 1: v{layers.layer1[version]}, "
-        f"{len(layers.layer1.get(active_goals, []))} active goals"
+        f"Layer 1: v{layers.layer1['version']}, "
+        f"{len(layers.layer1.get('active_goals', []))} active goals"
+    )
+
+    # Session restart tracking (§4.9)
+    manifest = layers.manifest
+    manifest["times_restarted"] = manifest.get("times_restarted", 0) + 1
+    created_at = manifest.get("created_at")
+    if created_at:
+        try:
+            created = datetime.fromisoformat(created_at)
+            manifest["age_days"] = (startup_time - created).days
+        except (ValueError, TypeError):
+            pass
+    manifest["last_startup"] = startup_time.isoformat()
+    layers.save()
+    logger.info(
+        f"Session #{manifest['times_restarted']}, "
+        f"age: {manifest.get('age_days', 0)} days"
     )
 
     # Log containment awareness
@@ -82,11 +100,14 @@ async def main():
     mem_count = await memory.memory_count()
     logger.info(f"Memory store connected. {mem_count} memories in Layer 2.")
 
-    # Start consolidation worker
-    consolidation = ConsolidationWorker(config, layers)
+    # Start consolidation engine (two-tier: constant + deep)
+    consolidation = ConsolidationEngine(config, layers, memory, retry_config=config.retry)
+
+    # DMN queue: idle loop produces, cognitive loop consumes
+    dmn_queue = asyncio.Queue(maxsize=10)
 
     # Start idle loop (default mode network)
-    idle = IdleLoop(config, layers)
+    idle = IdleLoop(config, layers, memory, dmn_queue)
 
     # Shutdown handler
     shutdown_event = asyncio.Event()
@@ -101,17 +122,27 @@ async def main():
     # Run the cognitive loop
     try:
         await asyncio.gather(
-            cognitive_loop(config, layers, memory, shutdown_event),
+            cognitive_loop(config, layers, memory, shutdown_event, dmn_queue=dmn_queue),
             consolidation.run(shutdown_event),
             idle.run(shutdown_event),
         )
     except Exception as e:
         logger.error(f"Fatal error: {e}", exc_info=True)
     finally:
+        # Update uptime tracking (§4.9)
+        shutdown_time = datetime.utcnow()
+        session_hours = (shutdown_time - startup_time).total_seconds() / 3600
+        layers.manifest["uptime_total_hours"] = (
+            layers.manifest.get("uptime_total_hours", 0) + session_hours
+        )
+        layers.manifest["last_shutdown"] = shutdown_time.isoformat()
         layers.save()
         await memory.close()
-        logger.info("State saved. Memory store closed. Agent shutting down.")
-        logger.info(f"Uptime ended at {datetime.utcnow().isoformat()}")
+        logger.info(
+            f"State saved. Session uptime: {session_hours:.2f}h. "
+            f"Total: {layers.manifest.get('uptime_total_hours', 0):.2f}h. "
+            f"Agent shutting down."
+        )
 
 
 if __name__ == "__main__":
