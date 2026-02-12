@@ -34,6 +34,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 # Agent home directory
 AGENT_HOME = Path.home() / ".agent"
+(AGENT_HOME / "logs").mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(
     level=logging.INFO,

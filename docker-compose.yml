@@ -1,6 +1,6 @@
 services:
   agent:
-    image: ghcr.io/stonks-git/intuititive-identity-ai:latest
+    image: ghcr.io/stonks-git/intuitive-ai:latest
     container_name: agent_001
     restart: unless-stopped
     depends_on:
