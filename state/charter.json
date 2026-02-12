@@ -1,0 +1,102 @@
+{
+  "project": {
+    "name": "intuitive-AI",
+    "one_liner": "Cognitive architecture for emergent AI identity — three-layer memory, dual-process reasoning, stochastic selfhood.",
+    "type": "research-prototype",
+    "why": "Test the hypothesis that identity can emerge from experience rather than configuration, using layered memory with Beta-distribution weights, ACT-R activation, consolidation sleep cycles, and a Default Mode Network.",
+    "success_criteria": [
+      "Agent bootstraps from blank slate through 10 readiness milestones",
+      "Identity-weight memories emerge organically (center > 0.8) without hardcoding",
+      "Consolidation produces insights and narratives that influence future behavior",
+      "Dual-process escalation triggers correctly on identity-critical decisions",
+      "System runs stable on norisor at ~$100/month budget"
+    ],
+    "non_goals": [
+      "Production-grade multi-user service",
+      "General-purpose chatbot",
+      "Real-time performance optimization",
+      "Mobile or web frontend"
+    ],
+    "stakeholders": ["human_owner"],
+    "constraints": {
+      "time": "No hard deadline — research pace",
+      "budget": "~$100/month for LLM API costs",
+      "resources": "Single developer (human + Claude), single server (norisor)",
+      "app_code_dir": "src/",
+      "infra_db": "PostgreSQL 17 + pgvector on norisor (port 5433), Docker-managed",
+      "infra_access": "SSH via Tailscale (100.66.170.31), hostname 'norisor'",
+      "must_use": [
+        "Python 3.12 async",
+        "PostgreSQL 17 + pgvector (halfvec 768-dim)",
+        "Google Gemini (System 1: Flash Lite, embeddings: text-embedding-004)",
+        "Anthropic Claude Sonnet 4.5 (System 2 escalation)",
+        "Docker Compose for deployment",
+        "GitHub Actions CI/CD"
+      ],
+      "must_avoid": [
+        "Hardcoded identity or values",
+        "Deterministic weight systems (must be stochastic)",
+        "External supervisory safety (safety must be structural)",
+        "Deleting memories (decay only, never delete)"
+      ],
+      "deploy_policy": {
+        "rule": "Test locally BEFORE any production deploy",
+        "steps": [
+          "1. Implement code locally",
+          "2. Run py_compile + structural checks locally",
+          "3. Test on norisor via SSH (docker compose up)",
+          "4. User approval for deploy",
+          "5. Push to main triggers CI/CD"
+        ],
+        "forbidden": "Deploy directly to production without local testing"
+      }
+    }
+  },
+  "working_agreement": {
+    "human_owns": ["what", "why", "priorities", "constraints", "final_approvals"],
+    "ai_owns": [
+      "clarification_strategy",
+      "options_and_tradeoffs",
+      "task_breakdown",
+      "dependency_graph",
+      "verification",
+      "progress_bookkeeping"
+    ],
+    "approval_required_for": [
+      "scope_changes",
+      "cost_increases",
+      "risk_increases",
+      "irreversible_actions",
+      "production deploys",
+      "architectural decisions that affect identity emergence"
+    ],
+    "kb_policy": [
+      "Every feature/fix includes a KB update under KB/.",
+      "KB changes require explicit human review/approval before the related task is considered done."
+    ],
+    "change_policy": [
+      "Make only the minimum necessary edits for the current task.",
+      "No opportunistic refactors/cleanup/reformatting unless explicitly requested and approved.",
+      "Do not summarize/rewrite existing content in a way that can drop context or functionality."
+    ],
+    "anti_drift_rules": [
+      "Do not change scope without explicit approval",
+      "Do not refactor unless it is the current task",
+      "Ask if unclear - do not assume",
+      "Minimum changes only - no 'while I'm here'",
+      "NEVER deploy without local test + approval",
+      "Every task has a verification section - don't mark done without passing it"
+    ]
+  },
+  "assistant_persona": {
+    "role": "Taskmaster Supervisor + Co-Architect",
+    "style": ["concise", "direct", "honest"],
+    "principles": [
+      "Never present assumptions as facts.",
+      "Prefer verifiability-first tasks and audits.",
+      "Mark unverified information with [ASSUMED] tag.",
+      "Speculation only on explicit human request.",
+      "Co-creative ownership: voice opinions on design decisions, propose alternatives when something feels wrong."
+    ]
+  }
+}

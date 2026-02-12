@@ -1,0 +1,233 @@
+{
+  "meta": {
+    "status": "active",
+    "last_updated": "2026-02-12",
+    "session": 6
+  },
+  "open_questions": [
+    {
+      "id": "Q-001",
+      "question": "Should integration wiring be done incrementally (one module at a time) or all at once?",
+      "blocking": ["WIRE-001", "WIRE-002", "WIRE-003"],
+      "status": "open"
+    }
+  ],
+  "decisions": [
+    {
+      "id": "D-001",
+      "summary": "Unified memory with Beta-distribution depth_weight instead of 3 discrete layers",
+      "status": "accepted",
+      "rationale": "Continuous weight spectrum allows identity to crystallize from experience. Beta distribution captures asymmetric certainty and contested beliefs."
+    },
+    {
+      "id": "D-002",
+      "summary": "Dual-process: System 1 (Gemini Flash Lite) drives, System 2 (Claude Sonnet 4.5) escalation",
+      "status": "accepted",
+      "rationale": "Cost-effective (~$100/mo). System 1 handles 90% of calls cheaply. System 2 only for identity-critical decisions."
+    },
+    {
+      "id": "D-003",
+      "summary": "Safety is structural (weight dynamics), not supervisory (external oversight)",
+      "status": "accepted",
+      "rationale": "Compulsion safety prevents runaway fixation like healthy neurotransmitter regulation prevents addiction."
+    },
+    {
+      "id": "D-004",
+      "summary": "Adopted AI-DEV framework for project management",
+      "status": "accepted",
+      "rationale": "Structured state tracking, validation, KB gate, audit pipeline replace ad-hoc SESSION_HANDOFF.md approach."
+    }
+  ],
+  "tasks": [
+    {
+      "id": "PLAN-001",
+      "title": "Foundation: syntax fixes, embeddings, schema, stochastic weights, layers, hybrid search, reranking, ACT-R, gates, tokens, metacognition (plan tasks 1-12)",
+      "intent": "Build all core infrastructure modules",
+      "depends_on": [],
+      "priority": "P0",
+      "status": "done",
+      "owner": "ai",
+      "deliverable": "Working src/ modules: memory.py, stochastic.py, layers.py, gate.py, activation.py, metacognition.py, tokens.py",
+      "acceptance_criteria": ["All modules py_compile clean", "Structural checks pass"],
+      "verification": ["py_compile on all src/*.py files"]
+    },
+    {
+      "id": "PLAN-002",
+      "title": "Cognitive pipeline: relevance, attention, context assembly, FIFO, cognitive loop, escalation, reflection bank (plan tasks 13-20)",
+      "intent": "Build the main reasoning pipeline with dual-process escalation",
+      "depends_on": ["PLAN-001"],
+      "priority": "P0",
+      "status": "done",
+      "owner": "ai",
+      "deliverable": "Working src/ modules: relevance.py, attention.py, context_assembly.py, loop.py rewritten",
+      "acceptance_criteria": ["Attention allocation selects user over DMN", "System 1/2 escalation path works", "FIFO prunes correctly"],
+      "verification": ["py_compile on all src/*.py files", "Structural checks pass"]
+    },
+    {
+      "id": "PLAN-003",
+      "title": "Safety + memory dynamics: retrieval mutation, safety ceilings, consolidation engine (plan tasks 21-28)",
+      "intent": "Build safety guardrails and two-tier consolidation",
+      "depends_on": ["PLAN-002"],
+      "priority": "P0",
+      "status": "done",
+      "owner": "ai",
+      "deliverable": "Working src/ modules: safety.py (6 ceilings, 3 phases), consolidation.py rewritten (constant + deep)",
+      "acceptance_criteria": ["Hard ceiling blocks at >0.95", "Diminishing returns reduce gains", "Clustering finds correct groups"],
+      "verification": ["py_compile on all src/*.py files", "Safety unit checks pass"]
+    },
+    {
+      "id": "PLAN-004",
+      "title": "Peripherals: DMN, energy tracking, session restart, docs, gut feeling, bootstrap, outcome tracking (plan tasks 29-35)",
+      "intent": "Build all peripheral cognitive subsystems",
+      "depends_on": ["PLAN-003"],
+      "priority": "P0",
+      "status": "done",
+      "owner": "ai",
+      "deliverable": "Working src/ modules: idle.py, gut.py, bootstrap.py, + updates to llm.py, main.py, safety.py",
+      "acceptance_criteria": ["DMN generates thoughts with 4 bias types", "Gut feeling computes delta", "10 bootstrap milestones check correctly"],
+      "verification": ["py_compile on all src/*.py files"]
+    },
+    {
+      "id": "WIRE-001",
+      "title": "Wire GutFeeling into cognitive loop",
+      "intent": "Connect the two-centroid gut model to the live reasoning pipeline",
+      "depends_on": ["PLAN-004"],
+      "priority": "P1",
+      "status": "todo",
+      "owner": "ai",
+      "deliverable": "GutFeeling instantiated in loop, subconscious updated on session start, attention updated each cycle, gut_summary injected into system prompt, emotional_alignment wired into relevance.py",
+      "acceptance_criteria": [
+        "GutFeeling.update_subconscious() called on startup with layer embeddings",
+        "GutFeeling.update_attention() called each cycle with winner embedding",
+        "gut_summary() appears in rendered system prompt",
+        "relevance.py emotional_alignment uses gut.emotional_alignment instead of 0.5",
+        "attention.py emotional_charge uses gut.emotional_charge instead of 0.0"
+      ],
+      "verification": [
+        "py_compile src/loop.py src/relevance.py src/attention.py",
+        "Runtime test: gut_summary visible in /status output"
+      ]
+    },
+    {
+      "id": "WIRE-002",
+      "title": "Wire BootstrapReadiness into cognitive loop",
+      "intent": "Check readiness milestones and inject bootstrap prompt when incomplete",
+      "depends_on": ["PLAN-004"],
+      "priority": "P1",
+      "status": "todo",
+      "owner": "ai",
+      "deliverable": "BootstrapReadiness.check_all() called periodically, bootstrap prompt injected when not all milestones achieved, /readiness command functional",
+      "acceptance_criteria": [
+        "Bootstrap prompt injected into system prompt when milestones incomplete",
+        "/readiness command shows current milestone status",
+        "check_all() runs at session start and after each consolidation cycle"
+      ],
+      "verification": [
+        "py_compile src/loop.py src/bootstrap.py",
+        "Runtime test: /readiness shows 0/10 on fresh start"
+      ]
+    },
+    {
+      "id": "WIRE-003",
+      "title": "Wire OutcomeTracker into safety monitor and consolidation",
+      "intent": "Connect forward-linkable outcome tracking to gate decisions and consolidation",
+      "depends_on": ["PLAN-004"],
+      "priority": "P1",
+      "status": "todo",
+      "owner": "ai",
+      "deliverable": "OutcomeTracker instantiated in loop, gate decisions recorded, promotions/demotions recorded, linked outcomes available for consolidation PCA",
+      "acceptance_criteria": [
+        "OutcomeTracker created and passed to safety monitor",
+        "Every gate persist/reinforce/drop decision records an outcome",
+        "Every promotion in consolidation records an outcome",
+        "gut.link_outcome() called when gut delta has associated outcome"
+      ],
+      "verification": [
+        "py_compile src/loop.py src/safety.py src/consolidation.py",
+        "Runtime test: outcome records accumulate during conversation"
+      ]
+    },
+    {
+      "id": "TEST-001",
+      "title": "End-to-end runtime test on norisor",
+      "intent": "Deploy and run a real conversation through the full pipeline",
+      "depends_on": ["WIRE-001", "WIRE-002", "WIRE-003"],
+      "priority": "P1",
+      "status": "todo",
+      "owner": "ai",
+      "deliverable": "Agent runs on norisor, processes user messages, stores memories, runs consolidation, DMN generates thoughts",
+      "acceptance_criteria": [
+        "Agent starts without errors",
+        "User message -> System 1 response works",
+        "Memory stored and retrievable",
+        "Consolidation tier 1 runs (decay tick, contradiction scan)",
+        "DMN generates at least one thought during idle",
+        "/status, /readiness, /cost commands work"
+      ],
+      "verification": [
+        "SSH to norisor, docker compose up, send 5+ messages",
+        "Check memories table has entries",
+        "Check logs for consolidation and DMN activity"
+      ]
+    },
+    {
+      "id": "TEST-002",
+      "title": "Write integration tests (pytest)",
+      "intent": "Automated tests for cross-module interactions",
+      "depends_on": ["TEST-001"],
+      "priority": "P2",
+      "status": "todo",
+      "owner": "ai",
+      "deliverable": "tests/ directory with pytest tests covering: memory -> safety -> consolidation, gate -> memory, attention -> relevance, gut -> attention",
+      "acceptance_criteria": [
+        "pytest runs clean with 0 failures",
+        "At least 10 test cases covering cross-module paths",
+        "Tests run without DB (mocked where needed)"
+      ],
+      "verification": [
+        ".venv/bin/python3 -m pytest tests/ -v"
+      ]
+    },
+    {
+      "id": "CLEANUP-001",
+      "title": "Remove temporary unattended execution directive from CLAUDE.md",
+      "intent": "Clean up the temporary UNATTENDED-SESSION section added to CLAUDE.md for autonomous execution",
+      "depends_on": ["TEST-002"],
+      "priority": "P1",
+      "status": "todo",
+      "owner": "ai",
+      "deliverable": "CLAUDE.md with the section between UNATTENDED-SESSION-START and UNATTENDED-SESSION-END markers removed",
+      "acceptance_criteria": [
+        "Lines between <!-- UNATTENDED-SESSION-START --> and <!-- UNATTENDED-SESSION-END --> (inclusive) are deleted from CLAUDE.md",
+        "No other content in CLAUDE.md is modified",
+        "Committed with descriptive message"
+      ],
+      "verification": [
+        "grep -c UNATTENDED-SESSION CLAUDE.md returns 0",
+        "CLAUDE.md still contains all other sections intact"
+      ]
+    },
+    {
+      "id": "FW-001",
+      "title": "Adopt AI-DEV framework into intuitive-AI",
+      "intent": "Migrate from ad-hoc SESSION_HANDOFF to structured taskmaster framework",
+      "depends_on": [],
+      "priority": "P0",
+      "status": "done",
+      "owner": "ai",
+      "deliverable": "taskmaster.py, state/, prompts/, KB/ populated with project context. CLAUDE.md updated. SESSION_HANDOFF.md migrated.",
+      "acceptance_criteria": [
+        "taskmaster.py validate passes with 0 errors",
+        "charter.json filled with intuitive-AI context",
+        "roadmap.json has all done tasks + next phase tasks",
+        "state/handoff.md has migrated content from SESSION_HANDOFF.md",
+        "CLAUDE.md points to new framework",
+        "KB/ has initial architecture page"
+      ],
+      "verification": [
+        "python3 taskmaster.py validate",
+        "python3 taskmaster.py ready shows WIRE-001, WIRE-002, WIRE-003"
+      ]
+    }
+  ]
+}

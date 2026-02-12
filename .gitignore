@@ -25,10 +25,19 @@ venv/
 Thumbs.db
 
 # Claude Code
-.claude/
-
-# Session handoff (local dev context, not deployed)
-SESSION_HANDOFF.md
+.claude/cache/
+.claude/debug/
+.claude/file-history/
+.claude/history.jsonl
+.claude/paste-cache/
+.claude/plans/
+.claude/session-env/
+.claude/shell-snapshots/
+.claude/tasks/
+.claude/todos/
+.claude/image-cache/
+.claude/stats-cache.json
+.claude/.credentials.json
 
 # Logs (agent generates these at runtime, not tracked)
 agent-state/logs/
