@@ -2,7 +2,7 @@
   "meta": {
     "status": "active",
     "last_updated": "2026-02-14",
-    "session": 8
+    "session": 9
   },
   "open_questions": [
     {
@@ -187,6 +187,50 @@
         "py_compile on all changed src/*.py files",
         "Agent starts on norisor, Telegram peripheral logs connection",
         "Message from Telegram wins attention and gets processed"
+      ]
+    },
+    {
+      "id": "DASH-001",
+      "title": "Agent consciousness dashboard v1",
+      "intent": "Localhost web dashboard for real-time agent introspection via Tailscale",
+      "depends_on": ["PERIPH-001"],
+      "priority": "P1",
+      "status": "done",
+      "owner": "ai",
+      "deliverable": "src/dashboard.py (AgentState, SSE, REST API, inline frontend), loop.py + main.py wired, aiohttp on port 8080",
+      "acceptance_criteria": [
+        "Dashboard serves at 0.0.0.0:8080",
+        "/api/status returns correct JSON",
+        "SSE events stream live cognitive events",
+        "Memory browser loads memories",
+        "Dashboard crash does not kill agent"
+      ],
+      "verification": [
+        "py_compile src/dashboard.py src/loop.py src/main.py",
+        "Deployed to norisor, /api/status returns JSON",
+        "Memory count matches DB"
+      ]
+    },
+    {
+      "id": "DASH-002",
+      "title": "Dashboard v2: terminal-style consciousness monitor",
+      "intent": "Rewrite dashboard to show full LLM context in+out per cycle like a streaming CLI",
+      "depends_on": ["DASH-001"],
+      "priority": "P1",
+      "status": "done",
+      "owner": "ai",
+      "deliverable": "Two-column layout (Conscious Mind + Attention Queue + Memory Search), 5 SSE events, consciousness log, semantic memory search",
+      "acceptance_criteria": [
+        "Full system prompt + conversation visible per cycle (collapsible)",
+        "Full LLM response visible with model name and confidence",
+        "Attention queue shows full text of all candidates",
+        "Memory search uses search_hybrid(mutate=False)",
+        "Consciousness log persists to NDJSON",
+        "Auto-scroll with scroll-lock"
+      ],
+      "verification": [
+        "py_compile src/dashboard.py src/loop.py",
+        "Local commit 427d213 — NOT deployed (user instruction)"
       ]
     },
     {

@@ -76,33 +76,57 @@
 
 ---
 
-### SESSION 2026-02-14 (I) - DASHBOARD
+### SESSION 2026-02-14 (I) - DASHBOARD v1 + v2 REWRITE
 
-**STATUS:** IN PROGRESS
+**STATUS:** v2 COMMITTED LOCALLY, NOT YET DEPLOYED
 
 **What was done:**
-1. **Dashboard implemented** — full agent consciousness dashboard:
-   - `src/dashboard.py` NEW (~900 lines) — AgentState dataclass, SSE broadcast, REST API, inline dark-theme frontend
-   - aiohttp web server at port 8080, accessible via Tailscale at http://norisor:8080
-   - 4 panels: Live Feed (SSE events), Agent Status, Context Window, Memory Store (paginated + click-to-expand)
-   - Read-only memory access via direct pool.fetch() (no side effects on cognitive system)
-   - All dynamic content uses textContent/DOM construction (no innerHTML XSS risk)
-2. **Wired into cognitive loop:**
-   - `src/loop.py` modified: agent_state param, assigns objects, shared conversation, 4 SSE events
-   - `src/main.py` modified: creates AgentState, passes to loop, adds dashboard task
-   - `_flush_scratch_through_exit_gate` now returns (persisted, dropped) tuple for dashboard
-3. **Infrastructure:**
-   - `requirements.txt`: added aiohttp>=3.9
-   - `Dockerfile`: added EXPOSE 8080
-   - `docker-compose.yml`: added port mapping 8080:8080, removed stdin_open/tty
-   - Norisor docker-compose.yml: added port mapping 8080:8080
-4. **KB updated:**
-   - KB_05_dashboard.md created
-   - KB_01, KB_03, KB_index updated
-   - D-007 decision added to roadmap
 
-**Pending:**
-- Deploy to norisor and verify dashboard at http://norisor:8080
+**Phase 1: Dashboard v1 (built, deployed, verified)**
+1. `src/dashboard.py` NEW — AgentState dataclass, SSE broadcast, REST API, inline HTML
+2. `src/loop.py` modified: `agent_state=None` param, assigns objects after creation, shared conversation list, 4 SSE events (cycle_start, llm_response, escalation, gate_flush)
+3. `src/main.py` modified: creates AgentState, passes to cognitive_loop, adds run_dashboard task
+4. `_flush_scratch_through_exit_gate` now returns `(persisted, dropped)` tuple
+5. Infrastructure: `requirements.txt` +aiohttp>=3.9, `Dockerfile` +EXPOSE 8080, `docker-compose.yml` +port 8080:8080, removed stdin_open/tty
+6. Norisor docker-compose.yml: added port mapping 8080:8080 (via SSH sed)
+7. **Deployed and verified**: `/api/status` returns correct JSON, 53 memories, bootstrap 5/10
+8. Added System 1/2 model names + escalation stats to status API and frontend
+
+**Phase 2: Dashboard v2 rewrite (committed locally, NOT deployed)**
+User wanted terminal-style consciousness monitor, not a metrics dashboard. Reviewed by UX agent.
+
+Changes to `src/dashboard.py` (complete rewrite of HTML/CSS/JS + new endpoints):
+- **Layout**: Two-column asymmetric. Left 65% = Conscious Mind. Right 35% split: top = Attention Queue, bottom = Memory Search.
+- **Header**: 28px bar with all stats compressed: gut, bootstrap, cost, escalations, queue, mem, model
+- **Conscious Mind panel**: Each cycle streams as a block via SSE:
+  - `INPUT` section: what won attention (full text)
+  - `SYSTEM PROMPT` section: collapsible, full LLM context (identity + safety + gut + bootstrap + corrections)
+  - `CONVERSATION` section: collapsible, rolling conversation window
+  - `RESPONSE` section: full LLM output with `S1/S2 [model_name] conf:X` label, green border for S1, orange for S2
+  - Auto-scrolls, pauses when user scrolls up manually
+- **Attention Queue panel**: Full text of all competing candidates with winner marked green, losers listed
+- **Memory Search panel**: search input with 300ms debounce, semantic search via `search_hybrid(mutate=False)`, click-to-expand inline detail. Shows latest 10 on empty search.
+- **New API endpoint**: `GET /api/memories/search?q=...` — uses `search_hybrid(mutate=False)` for read-only semantic search
+- **Removed**: v1 endpoints `/api/memories` (paginated), `/api/gut`, `/api/conversation`, `/api/energy` — replaced by SSE events and header polling
+
+Changes to `src/loop.py`:
+- **New SSE event `context_assembled`**: emitted after system prompt built, carries full `active_system_prompt` + conversation array + identity_tokens + context_shift
+- **Expanded `cycle_start` event**: now includes `winner` object (source, full content, salience) + `losers` array (up to 5, each with source, full content, salience) + queue_size
+- **Removed truncation**: `llm_response` event now carries full `reply` (was `reply[:200]`), plus `model` field
+- **Added `model` field** to both S1 and S2 llm_response events
+- **Consciousness log**: persistent NDJSON at `~/.agent/logs/consciousness.ndjson`, appended each cycle with: ts, source, salience, input, system_prompt_len, conversation_len, reply, escalated, confidence, context_shift, queue_size_after
+
+**Commits (3 commits, all on main, only first 2 pushed):**
+- `d685e49` Add agent consciousness dashboard (aiohttp, SSE, memory browser) — **PUSHED, DEPLOYED**
+- `1c5c005` Show System 1/2 models and escalation stats in dashboard — **PUSHED, DEPLOYED**
+- `427d213` Rewrite dashboard v2: terminal-style consciousness monitor — **LOCAL ONLY, NOT PUSHED**
+
+**CRITICAL: Current norisor state**
+- Norisor is running commit `1c5c005` (dashboard v1 with S1/S2 stats)
+- Commit `427d213` (v2 rewrite) is LOCAL ONLY, not pushed, not deployed
+- User was talking to the agent via Telegram when session ended
+- User explicitly said "don't deploy until I tell you"
+- To deploy v2: `git push origin main` then `ssh norisor "cd ~/agent-runtime && docker pull ghcr.io/stonks-git/intuitive-ai:latest && docker compose down && docker compose up -d"`
 
 ---
 
@@ -119,7 +143,8 @@ Cognitive architecture for emergent AI identity. Three-layer memory unified into
 | FW-001 | done |
 | WIRE-001/002/003 | done |
 | PERIPH-001 (Telegram) | DONE |
-| DASH-001 (Dashboard) | IN PROGRESS — code complete, needs deploy+verify |
+| DASH-001 (Dashboard v1) | DONE — deployed on norisor, verified |
+| DASH-002 (Dashboard v2) | COMMITTED LOCALLY — awaiting user signal to deploy |
 | TEST-001 | NEXT — full end-to-end runtime test |
 
 ---
@@ -281,22 +306,24 @@ ssh norisor "docker logs agent_001 2>&1 | grep -i telegram"
 - [x] Updated task statuses in handoff
 - [x] Completed current session section above
 - [x] devlog updated
-- [x] **Kept only last 3 sessions**
+- [x] **Kept only last 4 sessions** (C+D+E, F, G, H, I)
 - [x] KB updated if code was changed
+- [x] KB_05 needs v2 update (noted in devlog)
 
 ---
 
 ## Git Status
 
 - **Branch:** main
-- **Last commit:** 82dcb63 Document session H: stdin fix, Telegram verified, PERIPH-001 done
-- **Uncommitted:** Dashboard implementation (dashboard.py, loop.py, main.py, Dockerfile, docker-compose.yml, requirements.txt, KB updates)
-- **Agent status:** Running on norisor, Telegram connected. Dashboard not yet deployed.
+- **Last commit (local):** 427d213 Rewrite dashboard v2: terminal-style consciousness monitor
+- **Last commit (remote/norisor):** 1c5c005 Show System 1/2 models and escalation stats in dashboard
+- **Uncommitted:** devlog, handoff, KB updates (this documentation commit)
+- **Agent status:** Running on norisor with dashboard v1. Telegram connected. Dashboard v2 is local-only.
 
 ---
 
 ## Memory Marker
 
 ```
-MEMORY_MARKER: 2026-02-14 | PERIPH-001 DONE | Agent live on norisor, Telegram working | Next: TEST-001 (full end-to-end test)
+MEMORY_MARKER: 2026-02-14 | Dashboard v1 deployed, v2 local-only | Agent live on norisor, Telegram working | Next: deploy v2 when user says, then TEST-001
 ```
