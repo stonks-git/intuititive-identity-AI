@@ -164,6 +164,7 @@ class MemoryStore:
         importance: float = 0.5,
         evidence_count: int = 0,
         metadata: dict | None = None,
+        source_tag: str | None = None,
     ) -> str:
         """Embed and store a memory chunk. Returns the memory ID."""
         memory_id = f"mem_{uuid.uuid4().hex[:12]}"
@@ -176,8 +177,9 @@ class MemoryStore:
         await self.pool.execute(
             """
             INSERT INTO memories (id, content, type, embedding, created_at, updated_at,
-                                  source, tags, confidence, importance, evidence_count, metadata)
-            VALUES ($1, $2, $3, $4::halfvec, $5, $6, $7, $8, $9, $10, $11, $12)
+                                  source, tags, confidence, importance, evidence_count, metadata,
+                                  source_tag)
+            VALUES ($1, $2, $3, $4::halfvec, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             """,
             memory_id,
             content,
@@ -191,6 +193,7 @@ class MemoryStore:
             importance,
             evidence_count,
             json.dumps(metadata or {}),
+            source_tag,
         )
 
         logger.info(f"Stored memory {memory_id}: {content[:80]}...")

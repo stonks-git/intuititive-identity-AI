@@ -215,6 +215,16 @@ async def _flush_scratch_through_exit_gate(
         if should_persist:
             source_info = entry.get("source", "conversation")
             tags = entry.get("tags", [])
+            # Extract source_tag from scratch metadata
+            scratch_meta = entry.get("metadata")
+            if isinstance(scratch_meta, str):
+                import json as _json
+                try:
+                    scratch_meta = _json.loads(scratch_meta)
+                except (ValueError, TypeError):
+                    scratch_meta = {}
+            scratch_meta = scratch_meta or {}
+            entry_source_tag = scratch_meta.get("source_tag")
             await memory.store_memory(
                 content=content,
                 memory_type="episodic",
@@ -229,6 +239,7 @@ async def _flush_scratch_through_exit_gate(
                         for k, v in meta.items()
                     },
                 },
+                source_tag=entry_source_tag,
             )
             persisted += 1
         else:
@@ -526,6 +537,7 @@ async def cognitive_loop(config, layers, memory, shutdown_event, input_queue: as
                                 confidence=score,
                                 importance=score,
                                 metadata={"gate_score": score, "pruned_from": "fifo"},
+                                source_tag=msg.get("source_tag"),
                             )
                 conversation = kept
 
