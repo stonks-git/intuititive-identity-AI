@@ -441,6 +441,7 @@ async def cognitive_loop(config, layers, memory, shutdown_event, input_queue: as
                 cognitive_state_report=cognitive_report,
                 conversation=conversation,
                 total_budget=131072,
+                attention_text=winner.content,
             )
 
             system_prompt = render_system_prompt(context)

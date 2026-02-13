@@ -43,6 +43,7 @@ async def assemble_context(
     cognitive_state_report: str,
     conversation: list[dict],
     total_budget: int = 131072,
+    attention_text: str = "",
 ) -> dict:
     """Assemble the full context for an LLM call.
 
@@ -94,6 +95,7 @@ async def assemble_context(
     if situational_budget > 0 and attention_embedding is not None:
         situational = await _get_situational_memories(
             memory_store, attention_embedding, situational_budget,
+            query_text=attention_text,
         )
         for mem in situational:
             parts["situational"].append(
@@ -222,14 +224,13 @@ async def _get_top_identity_memories(memory_store, top_n: int) -> list[dict]:
 
 async def _get_situational_memories(
     memory_store, attention_embedding: np.ndarray, budget: int,
+    query_text: str = "",
 ) -> list[dict]:
     """Retrieve situationally relevant memories within token budget."""
-    # Use hybrid search for retrieval
+    if not query_text:
+        return []  # Can't search without query text
     candidates = await memory_store.search_hybrid(
-        # We need the query text, but we have the embedding.
-        # For now, use search_similar which accepts embeddings via text.
-        # This will be improved when retrieval pipeline is fully wired.
-        query="",  # placeholder — will use attention embedding directly later
+        query=query_text,
         top_k=10,
     )
 

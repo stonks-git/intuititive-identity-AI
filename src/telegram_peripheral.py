@@ -68,8 +68,12 @@ class TelegramPeripheral:
                 return
 
             # Drop pending updates from before this session
-            await self._api("getUpdates", {"offset": -1})
-            self._offset = 0
+            drop = await self._api("getUpdates", {"offset": -1})
+            if drop:
+                last_id = max(u.get("update_id", 0) for u in drop)
+                self._offset = last_id + 1
+            else:
+                self._offset = 0
 
             # Main polling loop
             while not shutdown_event.is_set():
